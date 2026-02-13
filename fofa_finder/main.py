@@ -13,7 +13,32 @@ from fofa_finder.modules.reanalyzer import ReAnalyzer
 from fofa_finder.learning.augment_data import augment
 from fofa_finder.learning.train_company_model import train as train_company_model
 
+import glob
+
 logger = setup_logger("Main")
+
+def sync_progress(output_dir):
+    """
+    扫描 output 目录，寻找所有已生成 _analysis.xlsx 的公司
+    返回: set(已完成公司名)
+    """
+    completed = set()
+    if not os.path.exists(output_dir):
+        return completed
+        
+    logger.info("正在同步历史进度 (扫描已完成的分析报告)...")
+    
+    search_pattern = os.path.join(output_dir, "**", "ai_reports", "*_analysis.xlsx")
+    files = glob.glob(search_pattern, recursive=True)
+    
+    for file_path in files:
+        filename = os.path.basename(file_path)
+        if "_analysis.xlsx" in filename:
+            company_name = filename.replace("_analysis.xlsx", "")
+            completed.add(company_name)
+            
+    logger.info(f"发现 {len(completed)} 个已完成的分析任务")
+    return completed
 
 def main():
     parser = argparse.ArgumentParser(description="FOFA Finder - Corporate Asset Discovery Tool")
@@ -114,11 +139,18 @@ def main():
     
     # Progress Tracking
     progress_file = os.path.join(Config.OUTPUT_DIR, "progress.txt")
-    processed_companies = set()
+    
+    # Sync progress from actual files
+    processed_companies = sync_progress(Config.OUTPUT_DIR)
+    
     if os.path.exists(progress_file):
         with open(progress_file, 'r', encoding='utf-8') as f:
-            processed_companies = set(line.strip() for line in f if line.strip())
-        logger.info(f"已加载进度: {len(processed_companies)} 家公司已处理 (Skipping them)")
+            for line in f:
+                name = line.strip()
+                if name and name not in processed_companies:
+                    processed_companies.add(name)
+                    
+    logger.info(f"最终进度: {len(processed_companies)} 家公司已处理")
 
     # Balance Calibration Settings
     BALANCE_CHECK_INTERVAL = 20 # Check real balance every 20 companies
