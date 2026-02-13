@@ -1,0 +1,39 @@
+查询语法参考
+×
+基础搜索：直接输入查询语句，将从标题、html内容、http头信息、url字段中搜索
+
+组合搜索：如果查询表达式有多个与或关系，尽量在外面用（）包含起来
+
+精确匹配：新增==完全匹配的符号，可以加快搜索速度
+
+高级搜索语法
+可以使用括号和 && || != 等符号进行复杂组合搜索
+
+title="powered by" && title!=discuz
+
+(body="content="WordPress" || (header="X-Pingback" && header="/xmlrpc.php" && body="/wp-includes/") && host="gov.cn")
+
+语法示例	说明	备注
+title="beijing"	从标题中搜索"北京"	基础搜索
+header="jboss"	从http头中搜索	服务识别
+body="Hacked by"	从html正文中搜索	内容匹配
+domain="qq.com"	搜索根域名	域名搜索
+icon_hash="-247388890"	搜索使用此icon的资产	高级会员
+host=".gov.cn"	从url中搜索	政府网站
+port="443"	查找对应端口	端口搜索
+ip="1.1.1.1"	从ip中搜索	IP搜索
+ip="220.181.111.1/24"	查询C网段资产	网段搜索
+status_code="402"	查询服务器状态	状态码
+protocol="https"	查询https协议资产	协议类型
+city="Hangzhou"	搜索指定城市	地理位置
+region="Zhejiang"	搜索指定行政区	行政区划
+country="CN"	搜索指定国家	国家搜索
+cert="google"	搜索证书内容	证书搜索
+banner=users && protocol=ftp	搜索FTP协议内容	协议+内容
+type=service	搜索所有协议资产	资产类型
+os=windows	搜索Windows资产	操作系统
+server=="Microsoft-IIS/7.5"	搜索IIS服务器	服务器版本
+app="HIKVISION-视频监控"	搜索海康威视设备	应用识别
+after="2017" && before="2017-10-01"	时间范围段搜索	时间筛选
+asn="19551"	搜索指定asn	ASN搜索
+org="Amazon.com, Inc."	搜索指定组织	组织搜索

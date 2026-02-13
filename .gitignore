@@ -1,0 +1,29 @@
+# Ignore virtual environments
+venv/
+env/
+.env
+
+# Ignore compiled python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore output directories and logs
+output/
+fofa_finder/output/
+*.log
+
+# Ignore data files
+*.xls
+*.xlsx
+*.csv
+*.pkl
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE specific files
+.vscode/
+.idea/
