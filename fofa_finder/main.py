@@ -20,6 +20,8 @@ logger = setup_logger("Main")
 def sync_progress(output_dir):
     """
     扫描 output 目录，寻找所有已生成 _analysis.xlsx 的公司
+    1. 将公司名加入 completed 集合
+    2. 将对应的 _raw.xlsx 路径补充到 reanalysis_progress.txt 中 (防止重复分析)
     返回: set(已完成公司名)
     """
     completed = set()
@@ -28,14 +30,43 @@ def sync_progress(output_dir):
         
     logger.info("正在同步历史进度 (扫描已完成的分析报告)...")
     
+    # Load existing raw paths to avoid duplicates
+    reanalysis_file = os.path.join(output_dir, "reanalysis_progress.txt")
+    existing_raw_paths = set()
+    if os.path.exists(reanalysis_file):
+        with open(reanalysis_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                existing_raw_paths.add(line.strip())
+    
     search_pattern = os.path.join(output_dir, "**", "ai_reports", "*_analysis.xlsx")
     files = glob.glob(search_pattern, recursive=True)
+    
+    new_raw_paths = []
     
     for file_path in files:
         filename = os.path.basename(file_path)
         if "_analysis.xlsx" in filename:
             company_name = filename.replace("_analysis.xlsx", "")
             completed.add(company_name)
+            
+            # Infer raw data path and sync to reanalysis_progress.txt
+            # Structure: output/company_name/ai_reports/company_name_analysis.xlsx
+            # Raw file:  output/company_name/company_name_raw.xlsx
+            company_dir = os.path.dirname(os.path.dirname(file_path))
+            raw_path = os.path.join(company_dir, f"{company_name}_raw.xlsx")
+            
+            if os.path.exists(raw_path):
+                abs_raw_path = os.path.abspath(raw_path)
+                if abs_raw_path not in existing_raw_paths:
+                    new_raw_paths.append(abs_raw_path)
+                    existing_raw_paths.add(abs_raw_path) # Avoid adding same file twice in this loop
+
+    # Batch write new paths
+    if new_raw_paths:
+        logger.info(f"正在同步 {len(new_raw_paths)} 个历史 raw 文件路径到 reanalysis_progress.txt ...")
+        with open(reanalysis_file, 'a', encoding='utf-8') as f:
+            for p in new_raw_paths:
+                f.write(f"{p}\n")
             
     logger.info(f"发现 {len(completed)} 个已完成的分析任务")
     return completed
@@ -139,6 +170,7 @@ def main():
     
     # Progress Tracking
     progress_file = os.path.join(Config.OUTPUT_DIR, "progress.txt")
+    reanalysis_file = os.path.join(Config.OUTPUT_DIR, "reanalysis_progress.txt")
     
     # Sync progress from actual files
     processed_companies = sync_progress(Config.OUTPUT_DIR)
@@ -234,7 +266,12 @@ def main():
         logger.info(f"公司 {company_name} 共发现 {len(all_company_assets)} 个唯一资产")
         
         # 5. Save Raw Data (Always save if assets found)
-        reporter.save_raw_data(company_name, all_company_assets)
+        raw_data_path = reporter.save_raw_data(company_name, all_company_assets)
+        
+        # Sync to reanalysis progress
+        if raw_data_path:
+             with open(reanalysis_file, 'a', encoding='utf-8') as f:
+                f.write(f"{raw_data_path}\n")
         
         # 6. AI Analysis (New Full Audit Mode)
         if all_company_assets: # Always analyze if we have assets
