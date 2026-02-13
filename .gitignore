@@ -16,7 +16,6 @@ fofa_finder/output/
 
 # Ignore data files
 *.xls
-*.xlsx
 *.csv
 *.pkl
 
