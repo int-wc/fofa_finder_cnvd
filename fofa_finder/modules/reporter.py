@@ -2,6 +2,7 @@
 import pandas as pd
 import os
 import time
+import shutil
 from .logger import setup_logger
 from ..config import Config
 
@@ -9,18 +10,22 @@ logger = setup_logger("Reporter")
 
 class Reporter:
     def __init__(self):
-        # Create session directory based on timestamp
+        # Create session directory based on timestamp in realtime folder
         self.timestamp = time.strftime("%Y%m%d_%H%M%S")
-        self.session_dir = os.path.join(Config.OUTPUT_DIR, self.timestamp)
+        self.session_dir = os.path.join(Config.OUTPUT_DIR, "realtime", self.timestamp)
         
-        # Ensure directory exists
+        # Ensure session directory exists
         if not os.path.exists(self.session_dir):
             os.makedirs(self.session_dir)
             
-        # Create ai_reports subdirectory
-        self.reports_dir = os.path.join(self.session_dir, "ai_reports")
-        if not os.path.exists(self.reports_dir):
-            os.makedirs(self.reports_dir)
+        # Create subdirectories for session
+        self.raw_dir = os.path.join(self.session_dir, "raw_data")
+        self.analysis_dir = os.path.join(self.session_dir, "analysis_data")
+        self.report_dir = os.path.join(self.session_dir, "report_data")
+        
+        for d in [self.raw_dir, self.analysis_dir, self.report_dir]:
+            if not os.path.exists(d):
+                os.makedirs(d)
             
         logger.info(f"Report Session Directory: {self.session_dir}")
 
@@ -30,14 +35,49 @@ class Reporter:
             name = name.replace(char, '_')
         return name
 
+    def _archive_file(self, filepath, category):
+        """
+        Archive file to nested date directories:
+        - output/YYYY/category/
+        - output/YYYY/MM/category/
+        - output/YYYY/MM/DD/category/
+        """
+        if not filepath or not os.path.exists(filepath):
+            return
+
+        try:
+            filename = os.path.basename(filepath)
+            now = time.localtime()
+            year = time.strftime("%Y", now)
+            month = time.strftime("%m", now)
+            day = time.strftime("%d", now)
+            
+            # Define archive base paths
+            archive_bases = [
+                os.path.join(Config.OUTPUT_DIR, year),
+                os.path.join(Config.OUTPUT_DIR, year, month),
+                os.path.join(Config.OUTPUT_DIR, year, month, day)
+            ]
+            
+            for base in archive_bases:
+                target_dir = os.path.join(base, category)
+                if not os.path.exists(target_dir):
+                    os.makedirs(target_dir)
+                
+                target_path = os.path.join(target_dir, filename)
+                shutil.copy2(filepath, target_path)
+                
+        except Exception as e:
+            logger.error(f"Archiving failed for {filepath}: {e}")
+
     def save_raw_data(self, company_name, assets):
         """
-        保存原始数据 (无 AI 分析)
-        路径: output/YYYYMMDD_HHMMSS/Company_raw.xlsx
+        Save raw data to session dir and archive it.
+        Category: raw_data
         """
         safe_name = self._sanitize_filename(company_name)
         filename = f"{safe_name}_raw.xlsx"
-        filepath = os.path.join(self.session_dir, filename)
+        filepath = os.path.join(self.raw_dir, filename)
         
         try:
             df_assets = pd.DataFrame(assets)
@@ -46,6 +86,10 @@ class Reporter:
                 df_assets.to_excel(writer, sheet_name='Raw Assets', index=False)
                 
             logger.info(f"原始数据已保存至: {filepath}")
+            
+            # Archive
+            self._archive_file(filepath, "raw_data")
+            
             return filepath
         except Exception as e:
             logger.error(f"保存原始数据失败 ({company_name}): {e}")
@@ -53,12 +97,12 @@ class Reporter:
 
     def save_ai_markdown(self, company_name, analysis_data):
         """
-        保存 AI 分析报告为 Markdown 文件 (CNVD 深度分析版)
-        路径: output/YYYYMMDD_HHMMSS/ai_reports/Company_analysis.md
+        Save markdown report to session dir and archive it.
+        Category: report_data
         """
         safe_name = self._sanitize_filename(company_name)
         filename = f"{safe_name}_analysis.md"
-        filepath = os.path.join(self.reports_dir, filename)
+        filepath = os.path.join(self.report_dir, filename)
         
         try:
             summary = analysis_data.get('summary', '无')
@@ -77,6 +121,10 @@ class Reporter:
                 f.write(content)
                 
             logger.info(f"AI Markdown 报告已保存至: {filepath}")
+            
+            # Archive
+            self._archive_file(filepath, "report_data")
+            
             return filepath
         except Exception as e:
             logger.error(f"保存 Markdown 报告失败 ({company_name}): {e}")
@@ -84,16 +132,12 @@ class Reporter:
 
     def save_ai_report(self, company_name, clean_assets, cnvd_assets, analysis_data):
         """
-        保存 AI 分析报告 (Excel)
-        路径: output/YYYYMMDD_HHMMSS/ai_reports/Company_analysis.xlsx
-        包含 Sheet:
-        1. Clean Assets (AI 清洗后的有效资产)
-        2. CNVD Candidates (建议重点测试的资产)
-        3. Overview (概览)
+        Save AI analysis excel to session dir and archive it.
+        Category: analysis_data
         """
         safe_name = self._sanitize_filename(company_name)
         filename = f"{safe_name}_analysis.xlsx"
-        filepath = os.path.join(self.reports_dir, filename)
+        filepath = os.path.join(self.analysis_dir, filename)
         
         try:
             df_clean = pd.DataFrame(clean_assets)
@@ -114,6 +158,10 @@ class Reporter:
                     df_cnvd.to_excel(writer, sheet_name='CNVD Candidates', index=False)
                 
             logger.info(f"AI 分析报告(Excel)已保存至: {filepath}")
+            
+            # Archive
+            self._archive_file(filepath, "analysis_data")
+            
             return filepath
         except Exception as e:
             logger.error(f"保存 AI 报告失败 ({company_name}): {e}")
