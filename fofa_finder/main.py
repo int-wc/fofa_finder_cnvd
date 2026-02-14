@@ -38,7 +38,9 @@ def sync_progress(output_dir):
             for line in f:
                 existing_raw_paths.add(line.strip())
     
-    search_pattern = os.path.join(output_dir, "**", "ai_reports", "*_analysis.xlsx")
+    # Pattern: **/*_analysis.xlsx (recursive)
+    # This confirms that the AI analysis phase was fully completed
+    search_pattern = os.path.join(output_dir, "**", "*_analysis.xlsx")
     files = glob.glob(search_pattern, recursive=True)
     
     new_raw_paths = []
@@ -50,13 +52,25 @@ def sync_progress(output_dir):
             completed.add(company_name)
             
             # Infer raw data path and sync to reanalysis_progress.txt
-            # Structure: output/company_name/ai_reports/company_name_analysis.xlsx
-            # Raw file:  output/company_name/company_name_raw.xlsx
-            company_dir = os.path.dirname(os.path.dirname(file_path))
-            raw_path = os.path.join(company_dir, f"{company_name}_raw.xlsx")
+            # Strategy: Check multiple possible locations for the raw file to support different structures
+            # 1. {parent}/raw_data/filename_raw.xlsx (Nested structure)
+            # 2. {parent}/filename_raw.xlsx (Flat structure)
+            # 3. {parent}/../raw_data/filename_raw.xlsx (Sibling structure, e.g., analysis_data/ vs raw_data/)
+            parent = os.path.dirname(file_path)
+            possible_paths = [
+                os.path.join(parent, "raw_data", f"{company_name}_raw.xlsx"),
+                os.path.join(parent, f"{company_name}_raw.xlsx"),
+                os.path.join(parent, "..", "raw_data", f"{company_name}_raw.xlsx")
+            ]
             
-            if os.path.exists(raw_path):
-                abs_raw_path = os.path.abspath(raw_path)
+            found_raw_path = None
+            for p in possible_paths:
+                if os.path.exists(p):
+                    found_raw_path = p
+                    break
+            
+            if found_raw_path:
+                abs_raw_path = os.path.abspath(found_raw_path)
                 if abs_raw_path not in existing_raw_paths:
                     new_raw_paths.append(abs_raw_path)
                     existing_raw_paths.add(abs_raw_path) # Avoid adding same file twice in this loop
@@ -68,7 +82,7 @@ def sync_progress(output_dir):
             for p in new_raw_paths:
                 f.write(f"{p}\n")
             
-    logger.info(f"发现 {len(completed)} 个已完成的分析任务")
+    logger.info(f"发现 {len(completed)} 个已完成的分析任务 (将跳过这些公司)")
     return completed
 
 def main():
@@ -88,24 +102,20 @@ def main():
     logger.info("正在启动 FOFA Finder...")
     
     # Auto-Learning Phase
-    # logger.info("="*50)
-    # logger.info(">>> 阶段 0: 自动学习与模型增强 (Auto Learning) <<<")
-    # logger.info("="*50)
-    # try:
-    #     # Augment with small batch (e.g., 10) to keep startup fast but continuous
-    #     added_count = augment(batch_size=10)
-    #     if added_count > 0:
-    #         logger.info(f"成功获取 {added_count} 条新样本，正在重新训练本地模型...")
-    #         train_company_model()
-    #         logger.info("本地模型已更新！")
-    #     else:
-    #         logger.info("本次未发现新样本或未进行增强。")
-    # except Exception as e:
-    #     logger.warning(f"自动学习过程中出现异常 (非阻断性): {e}")
-    
-    # 默认关闭自动学习，以免新手用户运行时卡住或报错
-    # 建议在文档中说明如何开启
-    pass
+    logger.info("="*50)
+    logger.info(">>> 阶段 0: 自动学习与模型增强 (Auto Learning) <<<")
+    logger.info("="*50)
+    try:
+        # Augment with small batch (e.g., 10) to keep startup fast but continuous
+        added_count = augment(batch_size=10)
+        if added_count > 0:
+            logger.info(f"成功获取 {added_count} 条新样本，正在重新训练本地模型...")
+            train_company_model()
+            logger.info("本地模型已更新！")
+        else:
+            logger.info("本次未发现新样本或未进行增强。")
+    except Exception as e:
+        logger.warning(f"自动学习过程中出现异常 (非阻断性): {e}")
 
     # 1. Load Companies
     loader = ExcelLoader()
@@ -175,14 +185,22 @@ def main():
     # Sync progress from actual files
     processed_companies = sync_progress(Config.OUTPUT_DIR)
     
+    # Optional: Load manual progress if needed, but file scan is safer
+    # If we want to skip companies that were processed but yielded NO assets (and thus no report),
+    # we should read progress.txt too.
     if os.path.exists(progress_file):
         with open(progress_file, 'r', encoding='utf-8') as f:
             for line in f:
                 name = line.strip()
                 if name and name not in processed_companies:
+                    # Caution: This assumes if it's in progress.txt, it's done.
+                    # But user said progress.txt might be inaccurate.
+                    # Let's trust file system (processed_companies) for 'success',
+                    # and maybe use progress.txt for 'attempted but failed/empty'.
+                    # For now, let's merge them to be safe against re-scanning empty companies.
                     processed_companies.add(name)
                     
-    logger.info(f"最终进度: {len(processed_companies)} 家公司已处理")
+    logger.info(f"最终进度: {len(processed_companies)} 家公司已处理 (文件扫描 + 历史记录)")
 
     # Balance Calibration Settings
     BALANCE_CHECK_INTERVAL = 20 # Check real balance every 20 companies
